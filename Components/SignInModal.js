@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,22 +7,30 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import InputField from './InputField';
 import ButtonPrimary from './ButtonPrimary';
 
-export default function SignInModal({ visible, onClose, onSignUpPress, onSuccess }) {
+export default function SignInModal({ open, onClose, onSwitch, onSubmit }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      setEmail('');
+      setPassword('');
+      setRememberMe(false);
+    }
+  }, [open]);
+
   const handleSignIn = () => {
-    console.log('Signed in with:', { email, password, rememberMe });
-    onSuccess();
+    if (onSubmit) {
+      onSubmit(email.trim(), password, rememberMe);
+    }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true}>
+    <Modal visible={open} animationType="slide" transparent={true} onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           <Text style={styles.title}>Shelvy</Text>
@@ -56,7 +64,7 @@ export default function SignInModal({ visible, onClose, onSignUpPress, onSuccess
             <ButtonPrimary label="Sign In" onPress={handleSignIn} />
 
             {/* New to Shelvy */}
-            <Pressable style={styles.createAccount} onPress={onSignUpPress}>
+            <Pressable style={styles.createAccount} onPress={onSwitch}>
               <Text style={styles.createText}>
                 New to Shelvy?{' '}
                 <Text style={styles.createLink}>Create an account</Text>

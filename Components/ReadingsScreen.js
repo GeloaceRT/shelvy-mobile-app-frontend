@@ -22,10 +22,10 @@ export default function ReadingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Recent Readings</Text>
         {recentReadings.map((reading) => (
-          <TouchableOpacity key={reading.id} style={styles.readingRow}>
+          <View key={reading.id} style={styles.readingRow}>
             <Text style={styles.readingTime}>{reading.time}</Text>
             <Text style={styles.readingData}>Humidity: {reading.humidity} | Temp: {reading.temperature}</Text>
-          </TouchableOpacity>
+          </View>
         ))}
       </View>
 
@@ -33,13 +33,13 @@ export default function ReadingsScreen() {
         <Text style={styles.sectionTitle}>Ping Summary</Text>
         <Text style={styles.subTitle}>All Device Pings</Text>
         {pingSummary.map((ping) => (
-          <TouchableOpacity key={ping.id} style={styles.pingRow}>
+          <View key={ping.id} style={styles.pingRow}>
             <MaterialCommunityIcons name="router-wireless" size={20} color="#E67E22" />
             <View style={styles.pingInfo}>
               <Text style={styles.pingDevice}>{ping.device}</Text>
               <Text style={styles.pingStatus}>{ping.status} - Last ping: {ping.lastPing}</Text>
             </View>
-          </TouchableOpacity>
+          </View>
         ))}
       </View>
     </ScrollView>

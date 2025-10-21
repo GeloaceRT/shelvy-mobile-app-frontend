@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,27 +7,32 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import InputField from './InputField';
 import ButtonPrimary from './ButtonPrimary';
 
-export default function SignUpModal({ visible, onClose, onSignInPress, onSuccess }) {
+export default function SignUpModal({ open, onClose, onSwitch, onSubmit }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      setName('');
+      setEmail('');
+      setPassword('');
+      setAgreeTerms(false);
+    }
+  }, [open]);
+
   const handleSignUp = () => {
-    if (agreeTerms) {
-      console.log('Signed up with:', { name, email, password });
-      onSuccess();
-    } else {
-      alert('Please agree to the terms.');
+    if (onSubmit) {
+      onSubmit(name.trim(), email.trim(), password, agreeTerms);
     }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true}>
+    <Modal visible={open} animationType="slide" transparent={true} onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           <Text style={styles.title}>Shelvy</Text>
@@ -72,7 +77,7 @@ export default function SignUpModal({ visible, onClose, onSignInPress, onSuccess
             <ButtonPrimary label="Sign Up" onPress={handleSignUp} />
 
             {/* Already have account */}
-            <Pressable style={styles.signInAccount} onPress={onSignInPress}>
+            <Pressable style={styles.signInAccount} onPress={onSwitch}>
               <Text style={styles.signInText}>
                 Already have an account?{' '}
                 <Text style={styles.signInLink}>Sign In</Text>
