@@ -12,31 +12,27 @@ import Navigation from './Components/Navigation';
 import SignInModal from './Components/SignInModal';
 import SignUpModal from './Components/SignUpModal';
 import { TelemetryProvider } from './context/TelemetryContext';
-
-const DEFAULT_ACCOUNTS = [
-  {
-    name: 'Angelo Zamora',
-    email: 'angelo@shelvy.io',
-    password: 'shelvy123',
-  },
-];
+import { login, logout } from './services/api';
 
 export default function App() {
-  const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
   const [session, setSession] = useState(null);
   const [showSignIn, setShowSignIn] = useState(false);
   const [showSignUp, setShowSignUp] = useState(false);
 
-  const handleSignIn = (email, password, remember) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const account = accounts.find((entry) => entry.email.trim().toLowerCase() === normalizedEmail);
-
-    if (!account || account.password !== password) {
-      Alert.alert('Invalid credentials', 'Please double-check your email and password.');
-      return;
+  const handleSignIn = async (email, password, remember) => {
+    const payload = await login(email, password);
+    if (!payload || !payload.user || !payload.token) {
+      throw new Error('Invalid response from server');
     }
 
-    setSession({ name: account.name, email: account.email, remember });
+    const { user, token } = payload;
+    setSession({
+      id: user.id,
+      name: user.username,
+      email,
+      token,
+      remember,
+    });
     setShowSignIn(false);
   };
 
@@ -51,30 +47,24 @@ export default function App() {
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const exists = accounts.some((entry) => entry.email.trim().toLowerCase() === normalizedEmail);
-
-    if (exists) {
-      Alert.alert('Account exists', 'Looks like you already signed up. Try signing in instead.');
-      setShowSignUp(false);
-      setShowSignIn(true);
-      return;
-    }
-
-    const nextAccount = { name, email, password };
-    setAccounts((prev) => [...prev, nextAccount]);
-    setSession({ name, email, remember: true });
-    setShowSignUp(false);
+    // In a real app, this would call a backend signup endpoint
+    Alert.alert('Sign Up', 'Please contact your administrator to create an account via the backend.');
   };
 
   const handleLogout = () => {
+    const token = session?.token;
+    if (token) {
+      logout(token).catch((err) => {
+        console.warn('[App] logout failed', err);
+      });
+    }
     setSession(null);
     setShowSignIn(false);
     setShowSignUp(false);
   };
 
   return (
-    <TelemetryProvider>
+    <TelemetryProvider token={session?.token}>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
         {session ? (

@@ -31,7 +31,8 @@ function formatRelativeTime(isoDate) {
 }
 
 export default function DashboardScreen({ user }) {
-  const { summary, devices = [], alerts = [], logs = [], setActiveDevice } = useTelemetry();
+  const { summary, devices = [], alerts = [], logs = [], status, setActiveDevice, refreshTelemetry } =
+    useTelemetry();
   const activeDevice = devices.find((device) => device.id === summary?.deviceId) || devices[0] || null;
   const displayAlerts = alerts.slice(0, 4);
   const displayLogs = logs.slice(0, 3);
@@ -58,8 +59,28 @@ export default function DashboardScreen({ user }) {
               {activeDevice ? activeDevice.location : 'Select a device to view live telemetry.'}
             </Text>
           </View>
-          <Text style={styles.selectorTimestamp}>{formatRelativeTime(summary?.lastUpdated)}</Text>
+          <View style={styles.statusColumn}>
+            <View style={styles.statusPill}>
+              <View
+                style={[styles.statusDot, status?.isLive ? styles.statusDotActive : styles.statusDotIdle]}
+              />
+              <Text style={styles.statusText}>{status?.isLive ? 'Live' : 'Offline'}</Text>
+            </View>
+            <Text style={styles.selectorTimestamp}>
+              {status?.lastSyncedAt
+                ? formatRelativeTime(status.lastSyncedAt)
+                : formatRelativeTime(summary?.lastUpdated)}
+            </Text>
+          </View>
         </View>
+        {status?.error ? <Text style={styles.errorBanner}>{status.error}</Text> : null}
+        <Pressable
+          style={({ pressed }) => [styles.refreshButton, pressed && styles.refreshButtonPressed]}
+          onPress={refreshTelemetry}
+          disabled={status?.isLoading}
+        >
+          <Text style={styles.refreshText}>{status?.isLoading ? 'Refreshing…' : 'Refresh Now'}</Text>
+        </Pressable>
         <View style={styles.chipRow}>
           {devices.map((device) => {
             const isActive = device.id === summary?.deviceId;
@@ -82,6 +103,7 @@ export default function DashboardScreen({ user }) {
 
       <View style={styles.cardsRow}>
         <IndicatorCard
+          type="humidity"
           value={summary ? summary.humidity : '--'}
           unit="%"
           icon="water"
@@ -89,20 +111,21 @@ export default function DashboardScreen({ user }) {
           optimal="50-70%"
           timestamp={formatRelativeTime(summary?.lastUpdated)}
           trend={{
-            value: Math.abs(humidityTrend),
+            value: Number.isFinite(humidityTrend) ? Math.abs(humidityTrend) : 0,
             unit: '%',
             direction: humidityTrend >= 0 ? 'up' : 'down',
             color: humidityTrend >= 0 ? '#16A34A' : '#DC2626',
           }}
         />
         <IndicatorCard
+          type="temperature"
           value={summary ? summary.temperature : '--'}
           unit="°C"
           icon="thermometer"
           status={statusLabel}
           timestamp={formatRelativeTime(summary?.lastUpdated)}
           trend={{
-            value: Math.abs(temperatureTrend),
+            value: Number.isFinite(temperatureTrend) ? Math.abs(temperatureTrend) : 0,
             unit: '°C',
             direction: temperatureTrend >= 0 ? 'up' : 'down',
             color: temperatureTrend >= 0 ? '#F97316' : '#0EA5E9',
@@ -238,6 +261,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  statusColumn: {
+    alignItems: 'flex-end',
+  },
   selectorLabel: {
     color: '#A0522D',
     fontSize: 14,
@@ -253,9 +279,61 @@ const styles = StyleSheet.create({
     color: '#6B4B2B',
     marginTop: 2,
   },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEEAD8',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+    backgroundColor: '#A0522D',
+  },
+  statusDotActive: {
+    backgroundColor: '#16A34A',
+  },
+  statusDotIdle: {
+    backgroundColor: '#B91C1C',
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#3D2914',
+    fontWeight: '600',
+  },
   selectorTimestamp: {
     fontSize: 12,
     color: '#A0522D',
+  },
+  errorBanner: {
+    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    color: '#B91C1C',
+    fontSize: 12,
+  },
+  refreshButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E67E22',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  refreshButtonPressed: {
+    opacity: 0.8,
+  },
+  refreshText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   chipRow: {
     flexDirection: 'row',

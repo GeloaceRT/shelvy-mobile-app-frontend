@@ -14,18 +14,45 @@ export default function SignInModal({ open, onClose, onSwitch, onSubmit }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) {
       setEmail('');
       setPassword('');
       setRememberMe(false);
+      setError('');
+      setLoading(false);
     }
   }, [open]);
 
-  const handleSignIn = () => {
-    if (onSubmit) {
-      onSubmit(email.trim(), password, rememberMe);
+  const handleSignIn = async () => {
+    const identifier = email.trim();
+    console.log('[SignInModal] attempting login', identifier);
+
+    if (!identifier || !password) {
+      setError('Email and password are required.');
+      return;
+    }
+
+    if (!onSubmit) {
+      setError('Sign-in is currently unavailable.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      await onSubmit(identifier, password, rememberMe);
+      onClose?.();
+    } catch (err) {
+      console.log('[SignInModal] login failed', err);
+      const message =
+        err instanceof Error ? err.message : 'Unable to sign in. Please try again.';
+      setError(message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -36,10 +63,7 @@ export default function SignInModal({ open, onClose, onSwitch, onSubmit }) {
           <Text style={styles.title}>Shelvy</Text>
           <Text style={styles.welcome}>Welcome back!</Text>
 
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 20 }}
-          >
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20 }}>
             <InputField
               placeholder="📧 Email Address"
               value={email}
@@ -52,18 +76,19 @@ export default function SignInModal({ open, onClose, onSwitch, onSubmit }) {
               secureTextEntry
             />
 
-            {/* Remember Me */}
-            <Pressable
-              onPress={() => setRememberMe(!rememberMe)}
-              style={styles.checkboxRow}
-            >
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <Pressable onPress={() => setRememberMe(!rememberMe)} style={styles.checkboxRow}>
               <View style={[styles.checkbox, rememberMe && styles.checked]} />
               <Text style={styles.checkboxLabel}>Remember me</Text>
             </Pressable>
 
-            <ButtonPrimary label="Sign In" onPress={handleSignIn} />
+            <ButtonPrimary
+              label={loading ? 'Signing in...' : 'Sign In'}
+              onPress={handleSignIn}
+              disabled={loading}
+            />
 
-            {/* New to Shelvy */}
             <Pressable style={styles.createAccount} onPress={onSwitch}>
               <Text style={styles.createText}>
                 New to Shelvy?{' '}
@@ -112,6 +137,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
     fontFamily: 'System',
+  },
+  errorText: {
+    color: '#E74C3C',
+    marginBottom: 12,
+    textAlign: 'center',
   },
   checkboxRow: {
     flexDirection: 'row',

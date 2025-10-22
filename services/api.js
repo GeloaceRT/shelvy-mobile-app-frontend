@@ -129,3 +129,17 @@ export async function logout(token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+export async function fetchLatestReading(token) {
+  return request('/api/readings', {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function fetchReadingAlerts(token) {
+  return request('/api/readings/alerts', {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
