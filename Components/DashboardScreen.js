@@ -146,10 +146,6 @@ export default function DashboardScreen({ user }) {
                 <Text style={styles.detailLabel}>Humidity</Text>
                 <Text style={styles.detailValue}>{activeDevice.humidity}%</Text>
               </View>
-              <View>
-                <Text style={styles.detailLabel}>Battery</Text>
-                <Text style={styles.detailValue}>{activeDevice.battery}%</Text>
-              </View>
             </View>
             <ButtonPrimary label="Active Monitoring Device" onPress={() => {}} />
           </View>

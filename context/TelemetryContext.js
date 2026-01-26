@@ -7,6 +7,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Alert, Platform, Vibration } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { fetchLatestReading, fetchReadingAlerts } from '../services/api';
 
 const TelemetryContext = createContext(null);
@@ -15,6 +17,32 @@ const CASING_DEVICE_ID = 'casing-1';
 const HISTORY_LIMIT = 20;
 const LOG_LIMIT = 20;
 const POLL_INTERVAL_MS = 5000;
+const CRITICAL_SEVERITY = 'warning';
+const NOTIFICATION_CHANNEL_ID = 'shelvy-critical-alerts';
+const NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000;
+const ALERT_HISTORY_LIMIT = 20;
+const VIBRATION_PATTERN = [0, 300, 150, 300, 150, 400];
+
+const isNotificationPermissionGranted = (permissionStatus) =>
+  Boolean(
+    permissionStatus &&
+      (permissionStatus.granted ||
+        permissionStatus.status === Notifications.AuthorizationStatus.GRANTED ||
+        permissionStatus.status === Notifications.AuthorizationStatus.PROVISIONAL)
+  );
+
+let notificationHandlerRegistered = false;
+
+if (!notificationHandlerRegistered) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+  notificationHandlerRegistered = true;
+}
 
 const createInitialState = () => {
   const now = new Date();
@@ -27,7 +55,6 @@ const createInitialState = () => {
       location: 'Bakery Floor · Section A',
       temperature: 25.4,
       humidity: 62,
-      battery: 84,
       status: 'online',
       isActive: true,
       lastUpdated: isoNow,
@@ -38,7 +65,6 @@ const createInitialState = () => {
       location: 'Proofing Room',
       temperature: 23.8,
       humidity: 58,
-      battery: 67,
       status: 'standby',
       isActive: false,
       lastUpdated: isoNow,
@@ -49,7 +75,6 @@ const createInitialState = () => {
       location: 'Storage · Section C',
       temperature: 27.1,
       humidity: 64,
-      battery: 49,
       status: 'standby',
       isActive: false,
       lastUpdated: isoNow,
@@ -182,6 +207,8 @@ const INITIAL_STATUS = {
 export function TelemetryProvider({ token, children }) {
   const [state, setState] = useState(() => createInitialState());
   const [status, setStatus] = useState(INITIAL_STATUS);
+  const alertHistoryRef = useRef(new Map());
+  const notificationsReadyRef = useRef(false);
   const isMountedRef = useRef(true);
   const activeTokenRef = useRef(token ?? null);
 
@@ -195,6 +222,112 @@ export function TelemetryProvider({ token, children }) {
   useEffect(() => {
     activeTokenRef.current = token ?? null;
   }, [token]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const configureNotifications = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
+            name: 'Shelvy critical alerts',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: VIBRATION_PATTERN,
+            sound: 'default',
+          });
+        }
+
+        const settings = await Notifications.getPermissionsAsync();
+        let granted = isNotificationPermissionGranted(settings);
+
+        if (!granted) {
+          const request = await Notifications.requestPermissionsAsync();
+          granted = isNotificationPermissionGranted(request);
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        notificationsReadyRef.current = Boolean(granted);
+      } catch (error) {
+        console.warn('[Telemetry] notification setup failed', error);
+      }
+    };
+
+    configureNotifications();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const registerCriticalAlerts = useCallback((criticalAlerts) => {
+    if (!criticalAlerts?.length) {
+      return [];
+    }
+
+    const now = Date.now();
+    const triggered = [];
+
+    criticalAlerts.forEach((alert) => {
+      const key = `${alert.title}|${alert.value}`;
+      const lastTriggeredAt = alertHistoryRef.current.get(key) ?? 0;
+      if (now - lastTriggeredAt >= NOTIFICATION_COOLDOWN_MS) {
+        alertHistoryRef.current.set(key, now);
+        triggered.push(alert);
+      }
+    });
+
+    if (alertHistoryRef.current.size > ALERT_HISTORY_LIMIT) {
+      const sortedEntries = [...alertHistoryRef.current.entries()].sort((a, b) => a[1] - b[1]);
+      while (sortedEntries.length > ALERT_HISTORY_LIMIT) {
+        const [staleKey] = sortedEntries.shift() ?? [];
+        if (staleKey) {
+          alertHistoryRef.current.delete(staleKey);
+        }
+      }
+    }
+
+    return triggered;
+  }, []);
+
+  const deliverCriticalNotifications = useCallback(async (alertsToNotify) => {
+    if (!alertsToNotify?.length) {
+      return;
+    }
+
+    try {
+      Vibration.vibrate(VIBRATION_PATTERN);
+
+      const messageBody = alertsToNotify.map((alert) => `• ${alert.title}`).join('\n');
+
+      if (!notificationsReadyRef.current) {
+        Alert.alert('Shelvy Alert', messageBody);
+        return;
+      }
+
+      await Promise.all(
+        alertsToNotify.map((alert) =>
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Shelvy Alert',
+              body: alert.title,
+              sound: 'default',
+              data: {
+                severity: alert.severity,
+                value: alert.value,
+                deviceId: alert.deviceId,
+              },
+            },
+            trigger: null,
+          })
+        )
+      );
+    } catch (error) {
+      console.warn('[Telemetry] failed to schedule critical alert notification', error);
+    }
+  }, []);
 
   const refreshTelemetry = useCallback(async () => {
     if (!token || !isMountedRef.current) {
@@ -234,11 +367,27 @@ export function TelemetryProvider({ token, children }) {
             id: `alert-${Date.now()}-${index}`,
             deviceId: CASING_DEVICE_ID,
             title: message,
-            severity: /high|critical/i.test(message) ? 'warning' : 'info',
+            severity: /high|critical/i.test(message) ? CRITICAL_SEVERITY : 'info',
             timestamp: isoCapturedAt,
             value: `${humidity.toFixed(1)}% · ${temperature.toFixed(1)}°C`,
           }))
         : null;
+
+      const triggeredCriticalAlerts = registerCriticalAlerts(
+        alerts?.filter((alert) => alert.severity === CRITICAL_SEVERITY) ?? []
+      );
+
+      if (triggeredCriticalAlerts.length) {
+        await deliverCriticalNotifications(triggeredCriticalAlerts);
+      }
+
+      const alertLogEntries = triggeredCriticalAlerts.map((alert, index) => ({
+        id: `log-alert-${Date.now()}-${index}`,
+        timestamp: isoCapturedAt,
+        deviceId: alert.deviceId,
+        event: alert.title,
+        type: 'alert',
+      }));
 
       setState((prev) => {
         const activeDeviceId = prev.activeDeviceId ?? CASING_DEVICE_ID;
@@ -254,7 +403,6 @@ export function TelemetryProvider({ token, children }) {
             id: CASING_DEVICE_ID,
             name: 'Casing 1',
             location: 'Bakery Floor · Section A',
-            battery: 100,
             status: 'online',
             isActive: true,
             lastUpdated: isoCapturedAt,
@@ -308,7 +456,7 @@ export function TelemetryProvider({ token, children }) {
           summary,
           devices: [updatedCasing, ...otherDevices],
           history: [historyEntry, ...prev.history].slice(0, HISTORY_LIMIT),
-          logs: [logEntry, ...prev.logs].slice(0, LOG_LIMIT),
+          logs: [...alertLogEntries, logEntry, ...prev.logs].slice(0, LOG_LIMIT),
           alerts: alerts ?? prev.alerts,
           activeDeviceId,
           lastUpdated: isoCapturedAt,
@@ -340,7 +488,7 @@ export function TelemetryProvider({ token, children }) {
         error: message,
       }));
     }
-  }, [token]);
+  }, [token, deliverCriticalNotifications, registerCriticalAlerts]);
 
   useEffect(() => {
     if (!token) {

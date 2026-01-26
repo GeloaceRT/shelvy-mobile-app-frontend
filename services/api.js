@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const DEFAULT_PORT = 3000;
+const DEFAULT_PORT = 3001;
 
 const trimTrailingSlash = (value) => value.replace(/\/$/, '');
 
@@ -114,32 +114,56 @@ async function request(path, options = {}) {
 }
 
 export async function login(email, password) {
-  return request('/api/auth/login', {
+  const res = await request('/api/auth/signin', {
     method: 'POST',
     body: JSON.stringify({
       email: email.trim(),
       password,
     }),
   });
+  // backend returns { firebaseToken, user }
+  return { user: res?.user, token: res?.firebaseToken ?? res?.token };
 }
 
 export async function logout(token) {
-  return request('/api/auth/logout', {
+  return request('/api/auth/signout', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export async function fetchLatestReading(token) {
-  return request('/api/readings', {
+  const deviceId = 'casing-1';
+  return request(`/api/readings/${deviceId}`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
 }
 
 export async function fetchReadingAlerts(token) {
-  return request('/api/readings/alerts', {
+  const deviceId = 'casing-1';
+  return request(`/api/readings/${deviceId}/alerts`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
+}
+
+export async function fetchProfile(token) {
+  return request('/api/users/me', {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function signup(firstName, lastName, email, password) {
+  const res = await request('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({
+      firstName: firstName?.trim?.() ?? '',
+      lastName: lastName?.trim?.() ?? '',
+      email: email?.trim?.(),
+      password,
+    }),
+  });
+  return { user: res?.user, token: res?.firebaseToken ?? res?.token };
 }

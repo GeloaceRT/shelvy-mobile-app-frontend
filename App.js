@@ -12,7 +12,8 @@ import Navigation from './Components/Navigation';
 import SignInModal from './Components/SignInModal';
 import SignUpModal from './Components/SignUpModal';
 import { TelemetryProvider } from './context/TelemetryContext';
-import { login, logout } from './services/api';
+import { login, logout, fetchProfile, signup } from './services/api';
+import { signInWithCustomTokenAndGetIdToken } from './services/firebase';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -25,30 +26,82 @@ export default function App() {
       throw new Error('Invalid response from server');
     }
 
-    const { user, token } = payload;
+    const { user, token: customToken } = payload;
+    // Exchange backend Firebase custom token for a client ID token
+    let idToken = customToken;
+    try {
+      idToken = await signInWithCustomTokenAndGetIdToken(customToken);
+    } catch (e) {
+      console.warn('[App] Firebase token exchange failed, proceeding with custom token', e);
+    }
+
+    // Try to fetch canonical profile from backend using the ID token
+    let profile;
+    try {
+      const res = await fetchProfile(idToken);
+      profile = res?.profile ?? res;
+    } catch (e) {
+      console.warn('[App] Failed to fetch profile from backend', e);
+    }
+
     setSession({
       id: user.id,
-      name: user.username,
+      // Prefer profile name, then explicit name/displayName from server user, then username, then email
+      name:
+        profile?.name ?? profile?.displayName ?? user.name ?? user.displayName ?? user.username ?? email,
       email,
-      token,
+      token: idToken,
       remember,
     });
     setShowSignIn(false);
   };
 
-  const handleSignUp = (name, email, password, agreeTerms) => {
+  const handleSignUp = async (firstName, lastName, email, password, agreeTerms) => {
     if (!agreeTerms) {
       Alert.alert('Hold on', 'Please agree to the terms before creating an account.');
       return;
     }
 
-    if (!name || !email || !password) {
+    if (!firstName || !lastName || !email || !password) {
       Alert.alert('Almost there', 'Kindly complete all fields to continue.');
       return;
     }
 
-    // In a real app, this would call a backend signup endpoint
-    Alert.alert('Sign Up', 'Please contact your administrator to create an account via the backend.');
+    try {
+      const payload = await signup(firstName, lastName, email, password);
+      if (!payload || !payload.user || !payload.token) {
+        throw new Error('Invalid response from server');
+      }
+
+      const { user, token: customToken } = payload;
+      let idToken = customToken;
+      try {
+        idToken = await signInWithCustomTokenAndGetIdToken(customToken);
+      } catch (e) {
+        console.warn('[App] Firebase token exchange failed after signup, proceeding with custom token', e);
+      }
+
+      let profile;
+      try {
+        const res = await fetchProfile(idToken);
+        profile = res?.profile ?? res;
+      } catch (e) {
+        console.warn('[App] Failed to fetch profile after signup', e);
+      }
+
+      setSession({
+        id: user.id,
+        name: profile?.name ?? profile?.displayName ?? `${firstName} ${lastName}` ?? user.username ?? email,
+        email,
+        token: idToken,
+        remember: true,
+      });
+
+      setShowSignUp(false);
+    } catch (e) {
+      console.error('[App] signup failed', e);
+      Alert.alert('Sign Up Failed', e instanceof Error ? e.message : 'Unable to create account');
+    }
   };
 
   const handleLogout = () => {

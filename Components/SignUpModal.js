@@ -11,14 +11,16 @@ import InputField from './InputField';
 import ButtonPrimary from './ButtonPrimary';
 
 export default function SignUpModal({ open, onClose, onSwitch, onSubmit }) {
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setName('');
+      setFirstName('');
+      setLastName('');
       setEmail('');
       setPassword('');
       setAgreeTerms(false);
@@ -27,7 +29,7 @@ export default function SignUpModal({ open, onClose, onSwitch, onSubmit }) {
 
   const handleSignUp = () => {
     if (onSubmit) {
-      onSubmit(name.trim(), email.trim(), password, agreeTerms);
+      onSubmit(firstName.trim(), lastName.trim(), email.trim(), password, agreeTerms);
     }
   };
 
@@ -43,9 +45,14 @@ export default function SignUpModal({ open, onClose, onSwitch, onSubmit }) {
             contentContainerStyle={{ paddingBottom: 20 }}
           >
             <InputField
-              placeholder="👤 Full Name"
-              value={name}
-              onChangeText={setName}
+              placeholder="👤 First Name"
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+            <InputField
+              placeholder="👤 Last Name"
+              value={lastName}
+              onChangeText={setLastName}
             />
             <InputField
               placeholder="📧 Email Address"
