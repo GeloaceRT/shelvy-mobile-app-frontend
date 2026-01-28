@@ -9,16 +9,26 @@ import React, {
 } from 'react';
 import { Alert, Platform, Vibration } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { fetchLatestReading, fetchReadingAlerts } from '../services/api';
+import {
+  fetchLatestReading,
+  fetchReadingAlerts,
+  pushReading,
+  fetchDeviceSecret,
+  fetchReadingsHistory,
+  fetchLatestFromDb,
+  DEFAULT_DEVICE_SECRET,
+} from '../services/api';
 
 const TelemetryContext = createContext(null);
 
-const CASING_DEVICE_ID = 'casing-1';
+const CASING_DEVICE_ID = 'esp32-01';
 const HISTORY_LIMIT = 20;
 const LOG_LIMIT = 20;
 const POLL_INTERVAL_MS = 5000;
-const CRITICAL_SEVERITY = 'warning';
+const AUTO_PUSH_INTERVAL_MS = 10000;
+const CRITICAL_SEVERITIES = ['warning', 'error'];
 const NOTIFICATION_CHANNEL_ID = 'shelvy-critical-alerts';
+const ENABLE_ALERT_NOTIFICATIONS = true;
 const NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000;
 const ALERT_HISTORY_LIMIT = 20;
 const VIBRATION_PATTERN = [0, 300, 150, 300, 150, 400];
@@ -59,26 +69,6 @@ const createInitialState = () => {
       isActive: true,
       lastUpdated: isoNow,
     },
-    {
-      id: 'casing-2',
-      name: 'Casing 2',
-      location: 'Proofing Room',
-      temperature: 23.8,
-      humidity: 58,
-      status: 'standby',
-      isActive: false,
-      lastUpdated: isoNow,
-    },
-    {
-      id: 'casing-3',
-      name: 'Casing 3',
-      location: 'Storage · Section C',
-      temperature: 27.1,
-      humidity: 64,
-      status: 'standby',
-      isActive: false,
-      lastUpdated: isoNow,
-    },
   ];
 
   const summary = {
@@ -99,22 +89,6 @@ const createInitialState = () => {
       timestamp: isoNow,
       value: 'Back in range',
     },
-    {
-      id: 'alert-2',
-      deviceId: devices[2].id,
-      title: 'Low humidity noted',
-      severity: 'warning',
-      timestamp: isoNow,
-      value: '64% humidity',
-    },
-    {
-      id: 'alert-3',
-      deviceId: devices[1].id,
-      title: 'Device ping healthy',
-      severity: 'success',
-      timestamp: isoNow,
-      value: 'Signal stable',
-    },
   ];
 
   const logs = [
@@ -131,20 +105,6 @@ const createInitialState = () => {
       deviceId: devices[0].id,
       event: 'Ping 25.4°C / 62%',
       type: 'metric',
-    },
-    {
-      id: 'log-3',
-      timestamp: isoNow,
-      deviceId: devices[2].id,
-      event: 'Alert generated: Low humidity noted',
-      type: 'alert',
-    },
-    {
-      id: 'log-4',
-      timestamp: isoNow,
-      deviceId: devices[1].id,
-      event: 'Device set to standby mode',
-      type: 'info',
     },
   ];
 
@@ -170,20 +130,6 @@ const createInitialState = () => {
       humidity: 60.8,
       timestamp: isoNow,
     },
-    {
-      id: 'reading-4',
-      deviceId: devices[1].id,
-      temperature: devices[1].temperature,
-      humidity: devices[1].humidity,
-      timestamp: isoNow,
-    },
-    {
-      id: 'reading-5',
-      deviceId: devices[2].id,
-      temperature: devices[2].temperature,
-      humidity: devices[2].humidity,
-      timestamp: isoNow,
-    },
   ];
 
   return {
@@ -206,6 +152,9 @@ const INITIAL_STATUS = {
 
 export function TelemetryProvider({ token, children }) {
   const [state, setState] = useState(() => createInitialState());
+  const [dbError, setDbError] = useState('');
+  const stateRef = useRef(null);
+  const remoteDeviceIdRef = useRef(null);
   const [status, setStatus] = useState(INITIAL_STATUS);
   const alertHistoryRef = useRef(new Map());
   const notificationsReadyRef = useRef(false);
@@ -218,6 +167,11 @@ export function TelemetryProvider({ token, children }) {
       isMountedRef.current = false;
     };
   }, []);
+
+  // keep a ref to latest state so long-running intervals/readers use current values
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     activeTokenRef.current = token ?? null;
@@ -293,6 +247,7 @@ export function TelemetryProvider({ token, children }) {
   }, []);
 
   const deliverCriticalNotifications = useCallback(async (alertsToNotify) => {
+    if (!ENABLE_ALERT_NOTIFICATIONS) return; // suppress popups/vibration during testing
     if (!alertsToNotify?.length) {
       return;
     }
@@ -367,14 +322,14 @@ export function TelemetryProvider({ token, children }) {
             id: `alert-${Date.now()}-${index}`,
             deviceId: CASING_DEVICE_ID,
             title: message,
-            severity: /high|critical/i.test(message) ? CRITICAL_SEVERITY : 'info',
+            severity: /high|critical|low/i.test(message) ? 'warning' : 'info',
             timestamp: isoCapturedAt,
             value: `${humidity.toFixed(1)}% · ${temperature.toFixed(1)}°C`,
           }))
         : null;
 
       const triggeredCriticalAlerts = registerCriticalAlerts(
-        alerts?.filter((alert) => alert.severity === CRITICAL_SEVERITY) ?? []
+        alerts?.filter((alert) => CRITICAL_SEVERITIES.includes(alert.severity)) ?? []
       );
 
       if (triggeredCriticalAlerts.length) {
@@ -517,6 +472,94 @@ export function TelemetryProvider({ token, children }) {
     };
   }, [token, refreshTelemetry]);
 
+  // Auto-push to backend RTDB and sync history from DB (app-wide)
+  useEffect(() => {
+    if (!token || !isMountedRef.current) return;
+
+    let timer = null;
+    let deviceSecret = DEFAULT_DEVICE_SECRET;
+    let deviceId = null;
+
+    const initAndStart = async () => {
+      try {
+        const cfg = await fetchDeviceSecret();
+        deviceSecret = cfg?.deviceSecret ?? DEFAULT_DEVICE_SECRET;
+        deviceId = cfg?.deviceId ?? CASING_DEVICE_ID;
+        remoteDeviceIdRef.current = deviceId;
+      } catch (e) {
+        // ignore, use defaults
+        deviceId = CASING_DEVICE_ID;
+      }
+
+      // initial history fetch
+      try {
+        const histRes = await fetchReadingsHistory(token, 3);
+        const readings = histRes?.readings ?? [];
+        if (readings.length) {
+          const mapped = readings
+            .slice()
+            .reverse()
+            .map((r) => ({
+              id: r.key ?? `reading-${r.ts ?? Date.now()}`,
+              deviceId: r.deviceId ?? deviceId,
+              temperature: Number(r.temperature),
+              humidity: Number(r.humidity),
+              timestamp: r.ts ? new Date(Number(r.ts)).toISOString() : r.date ?? new Date().toISOString(),
+            }));
+          setState((prev) => ({ ...prev, history: mapped }));
+          setDbError('');
+        }
+      } catch (e) {
+        setDbError(e instanceof Error ? e.message : 'Failed to load DB history');
+      }
+
+      // start auto-push interval
+      timer = setInterval(async () => {
+        if (!isMountedRef.current) return;
+        try {
+          const s = stateRef.current?.summary ?? {};
+          if (!s || typeof s.temperature !== 'number' || typeof s.humidity !== 'number') return;
+          const payload = { ts: Date.now(), temperature: Number(s.temperature), humidity: Number(s.humidity) };
+          await pushReading(deviceId ?? CASING_DEVICE_ID, payload, deviceSecret);
+          // refresh history after push
+          try {
+            const histRes = await fetchReadingsHistory(token, 3);
+            const readings = histRes?.readings ?? [];
+            const mapped = readings
+              .slice()
+              .reverse()
+              .map((r) => ({
+                id: r.key ?? `reading-${r.ts ?? Date.now()}`,
+                deviceId: r.deviceId ?? deviceId,
+                temperature: Number(r.temperature),
+                humidity: Number(r.humidity),
+                timestamp: r.ts ? new Date(Number(r.ts)).toISOString() : r.date ?? new Date().toISOString(),
+              }));
+            setState((prev) => ({ ...prev, history: mapped }));
+            setDbError('');
+          } catch (e) {
+            setDbError(e instanceof Error ? e.message : 'Failed to refresh DB history');
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('403') || /device secret/i.test(msg) || /invalid device secret/i.test(msg)) {
+            setDbError('Invalid device secret for RTDB pushes.');
+          } else {
+            setDbError(msg || 'Auto-push failed');
+          }
+        }
+      }, AUTO_PUSH_INTERVAL_MS);
+    };
+
+    initAndStart();
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+    // depend on token and state.summary changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   const setActiveDevice = useCallback((deviceId) => {
     setState((prev) => {
       if (!deviceId || !prev.devices.some((device) => device.id === deviceId)) {
@@ -558,6 +601,8 @@ export function TelemetryProvider({ token, children }) {
     () => ({
       ...state,
       status,
+      dbError,
+      remoteDeviceId: remoteDeviceIdRef.current,
       setActiveDevice,
       refreshTelemetry,
     }),

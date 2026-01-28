@@ -46,9 +46,15 @@ export default function App() {
 
     setSession({
       id: user.id,
-      // Prefer profile name, then explicit name/displayName from server user, then username, then email
+      // Prefer profile name, then profile first/last, then explicit name/displayName from server user, then username, then email
       name:
-        profile?.name ?? profile?.displayName ?? user.name ?? user.displayName ?? user.username ?? email,
+        profile?.name ??
+        profile?.displayName ??
+        (profile?.firstName && profile?.lastName ? `${profile.firstName} ${profile.lastName}` : undefined) ??
+        user.name ??
+        user.displayName ??
+        user.username ??
+        email,
       email,
       token: idToken,
       remember,
@@ -91,7 +97,14 @@ export default function App() {
 
       setSession({
         id: user.id,
-        name: profile?.name ?? profile?.displayName ?? `${firstName} ${lastName}` ?? user.username ?? email,
+        // Prefer profile name, profile first/last, then provided signup name, then username, then email
+        name:
+          profile?.name ??
+          profile?.displayName ??
+          (profile?.firstName && profile?.lastName ? `${profile.firstName} ${profile.lastName}` : undefined) ??
+          `${firstName} ${lastName}` ??
+          user.username ??
+          email,
         email,
         token: idToken,
         remember: true,

@@ -33,6 +33,7 @@ function formatRelativeTime(isoDate) {
 export default function DashboardScreen({ user }) {
   const { summary, devices = [], alerts = [], logs = [], status, setActiveDevice, refreshTelemetry } =
     useTelemetry();
+  
   const activeDevice = devices.find((device) => device.id === summary?.deviceId) || devices[0] || null;
   const displayAlerts = alerts.slice(0, 4);
   const displayLogs = logs.slice(0, 3);
@@ -40,10 +41,10 @@ export default function DashboardScreen({ user }) {
   const humidityTrend = summary?.humidityTrend ?? 0;
   const statusLabel = activeDevice ? 'Live' : 'Idle';
 
+  
+
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Dashboard</Text>
-
       <View style={styles.welcomeCard}>
         <Text style={styles.greeting}>Hello! 👋</Text>
         <Text style={styles.welcomeTitle}>Welcome back {user?.name ?? 'Baker'}</Text>
@@ -133,39 +134,27 @@ export default function DashboardScreen({ user }) {
         />
       </View>
 
-      <View style={styles.deviceCard}>
-        <Text style={styles.cardTitle}>Current device connected</Text>
-        {activeDevice ? (
-          <View style={styles.deviceDetails}>
-            <View style={styles.detailRow}>
-              <View>
-                <Text style={styles.detailLabel}>Temperature</Text>
-                <Text style={styles.detailValue}>{activeDevice.temperature}°C</Text>
-              </View>
-              <View>
-                <Text style={styles.detailLabel}>Humidity</Text>
-                <Text style={styles.detailValue}>{activeDevice.humidity}%</Text>
-              </View>
-            </View>
-            <ButtonPrimary label="Active Monitoring Device" onPress={() => {}} />
-          </View>
-        ) : (
-          <Text style={styles.emptyState}>No device selected. Choose from the list above to view telemetry.</Text>
-        )}
-      </View>
+      {/* Removed Current device connected widget per request */}
 
       <View style={styles.logsSection}>
-        <Text style={styles.cardTitle}>Recent logs</Text>
-        {displayLogs.length === 0 && <Text style={styles.emptyState}>No log entries yet.</Text>}
-        {displayLogs.map((entry) => (
-          <View style={styles.logRow} key={entry.id}>
-            <View>
-              <Text style={styles.logEvent}>{entry.event}</Text>
-              <Text style={styles.logMeta}>{entry.deviceId}</Text>
+        <Text style={styles.cardTitle}>Recent readings</Text>
+        {displayLogs.length === 0 && <Text style={styles.emptyState}>No recent readings yet.</Text>}
+        {displayLogs.map((entry, idx) => {
+          const ts = entry.timestamp ?? entry.date ?? entry.ts ?? null;
+          const d = ts ? new Date(ts) : null;
+          const timeStr = d && !isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : formatRelativeTime(entry.timestamp);
+          // try to extract temperature/humidity from event if present (e.g. 'Reading 27.1°C / 55.1%')
+          const match = typeof entry.event === 'string' ? entry.event.match(/([0-9]+\.?[0-9]*)°C\s*\/\s*([0-9]+\.?[0-9]*)%/) : null;
+          const temperature = match ? `${match[1]}°C` : '--';
+          const humidity = match ? `${match[2]}%` : entry.deviceId ? `${entry.deviceId}` : '--';
+
+          return (
+            <View style={styles.readingRow} key={entry.id ?? `log-${idx}`}>
+              <Text style={styles.readingTime}>{timeStr}</Text>
+              <Text style={styles.readingData}>Humidity: {humidity} | Temp: {temperature}</Text>
             </View>
-            <Text style={styles.logTime}>{formatRelativeTime(entry.timestamp)}</Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={styles.alertSection}>
@@ -209,15 +198,8 @@ const styles = StyleSheet.create({
   },
   container: {
     paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 24,
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#A0522D',
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 16,
   },
   welcomeCard: {
     backgroundColor: '#FFFFFF',
@@ -331,6 +313,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  pushButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#3D2914',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  pushButtonPressed: {
+    opacity: 0.85,
+  },
+  pushText: {
+    color: '#FBD6A4',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dbInfo: {
+    fontSize: 12,
+    color: '#6B4B2B',
+    marginBottom: 8,
+  },
+  dbError: {
+    fontSize: 12,
+    color: '#B91C1C',
+    marginBottom: 8,
+  },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -429,6 +438,26 @@ const styles = StyleSheet.create({
   },
   logTime: {
     fontSize: 12,
+    color: '#A0522D',
+  },
+  readingRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  readingTime: {
+    fontSize: 14,
+    color: '#A0522D',
+    fontWeight: 'bold',
+  },
+  readingData: {
+    fontSize: 14,
     color: '#A0522D',
   },
   alertSection: {

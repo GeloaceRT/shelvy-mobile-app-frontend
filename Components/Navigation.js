@@ -6,7 +6,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DashboardScreen from './DashboardScreen';
 import DeviceManagerScreen from './DeviceManagerScreen';
 import ReadingsScreen from './ReadingsScreen';
-import AlertsScreen from './AlertsScreen';
 import LogsScreen from './LogsScreen';
 import SettingsScreen from './SettingsScreen';
 
@@ -20,8 +19,7 @@ export default function Navigation({ user, onLogout }) {
           let iconName = 'home';
           if (route.name === 'Devices') iconName = 'router-wireless';
           else if (route.name === 'Monitoring') iconName = 'monitor';
-          else if (route.name === 'Alerts') iconName = 'bell';
-          else if (route.name === 'Logs') iconName = 'history';
+          else if (route.name === 'History') iconName = 'timeline-text';
           else if (route.name === 'Settings') iconName = 'cog';
 
           return {
@@ -52,8 +50,7 @@ export default function Navigation({ user, onLogout }) {
         </Tab.Screen>
         <Tab.Screen name="Devices" component={DeviceManagerScreen} />
         <Tab.Screen name="Monitoring" component={ReadingsScreen} />
-        <Tab.Screen name="Alerts" component={AlertsScreen} />
-        <Tab.Screen name="Logs" component={LogsScreen} />
+        <Tab.Screen name="History" component={LogsScreen} />
         <Tab.Screen name="Settings">
           {() => <SettingsScreen user={user} onLogout={onLogout} />}
         </Tab.Screen>

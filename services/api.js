@@ -5,6 +5,9 @@ const DEFAULT_PORT = 3001;
 
 const trimTrailingSlash = (value) => value.replace(/\/$/, '');
 
+// Fallback device secret for secured ingest (align with backend DEVICE_SECRET)
+export const DEFAULT_DEVICE_SECRET = process.env.EXPO_PUBLIC_DEVICE_SECRET || 'dev-device-secret-please-change';
+
 const normaliseUrl = (value) =>
   value.startsWith('http') ? trimTrailingSlash(value) : `http://${trimTrailingSlash(value)}:${DEFAULT_PORT}`;
 
@@ -133,15 +136,60 @@ export async function logout(token) {
 }
 
 export async function fetchLatestReading(token) {
-  const deviceId = 'casing-1';
+  const deviceId = 'esp32-01';
   return request(`/api/readings/${deviceId}`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
 }
 
+export async function fetchLatestFromDb(token) {
+  const deviceId = 'esp32-01';
+  return request(`/api/readings/${deviceId}/latest`, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function fetchReadingsHistory(token, limit = 3) {
+  const deviceId = 'esp32-01';
+  return request(`/api/readings/${deviceId}/history?limit=${Number(limit)}`, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+// Fetch readings with optional device and date range (server must support from/to params)
+export async function fetchReadingsRange({ deviceId = 'esp32-01', from, to, limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to) params.set('to', new Date(to).toISOString());
+  return request(`/api/readings/${deviceId}/history?${params.toString()}`, { method: 'GET' });
+}
+
+export async function fetchAlertsRange({ deviceId = 'esp32-01', from, to, limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to) params.set('to', new Date(to).toISOString());
+  return request(`/api/readings/${deviceId}/alerts/history?${params.toString()}`, { method: 'GET' });
+}
+
+export async function pushReading(deviceId, reading, deviceSecret) {
+  return request(`/api/readings/${deviceId}`, {
+    method: 'POST',
+    headers: deviceSecret ? { 'x-device-secret': deviceSecret } : undefined,
+    body: JSON.stringify(reading),
+  });
+}
+
+export async function fetchDeviceSecret() {
+  return request(`/api/config/device-secret`, { method: 'GET' });
+}
+
 export async function fetchReadingAlerts(token) {
-  const deviceId = 'casing-1';
+  const deviceId = 'esp32-01';
   return request(`/api/readings/${deviceId}/alerts`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
