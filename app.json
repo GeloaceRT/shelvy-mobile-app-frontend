@@ -20,12 +20,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.geloacert.Shelvy"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
-    ,
+    },
     "extra": {
       "apiBaseUrl": "http://localhost:4000",
       "firebaseConfig": {
@@ -36,6 +36,9 @@
         "storageBucket": "env-monitor-v2.appspot.com",
         "messagingSenderId": "711363348444",
         "appId": "1:711363348444:web:02eaafb80a94d619307119"
+      },
+      "eas": {
+        "projectId": "6b65a865-3cce-445d-a1eb-91e404de9a40"
       }
     }
   }

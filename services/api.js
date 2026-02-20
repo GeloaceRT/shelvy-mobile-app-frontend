@@ -1,7 +1,11 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { captureAndSave } from '../utils/screenshot';
 
 const DEFAULT_PORT = 3001;
+// Toggle this string to simulate client-side scenarios without hitting the backend.
+// Supported values: 'none', 'no-data', 'stale', 'invalid-numeric', 'out-of-range'.
+const SIMULATED_READING_SCENARIO = 'none';
 
 const trimTrailingSlash = (value) => value.replace(/\/$/, '');
 
@@ -62,9 +66,13 @@ async function request(path, options = {}) {
     });
   } catch (error) {
     if (error instanceof TypeError && error.message === 'Network request failed') {
-      throw new Error(
-        `Unable to reach the Shelvy backend at ${API_BASE_URL}. Confirm the server is running and accessible from this device.`
-      );
+      try {
+        // capture an on-device screenshot for evidence
+        await captureAndSave('network-error');
+      } catch (e) {
+        console.warn('Screenshot capture failed', e);
+      }
+      throw new Error('Network disconnected. Please check your connection and try again.');
     }
     throw error instanceof Error ? error : new Error('Unexpected network error.');
   }
@@ -137,6 +145,33 @@ export async function logout(token) {
 
 export async function fetchLatestReading(token) {
   const deviceId = 'esp32-01';
+
+  if (SIMULATED_READING_SCENARIO && SIMULATED_READING_SCENARIO !== 'none') {
+    const now = Date.now();
+    const scenarios = {
+      'no-data': null,
+      stale: {
+        temperature: 25.4,
+        humidity: 61.2,
+        capturedAt: new Date(now - 60_000).toISOString(),
+      },
+      'invalid-numeric': {
+        temperature: 'NaN',
+        humidity: 'oops',
+        capturedAt: new Date(now).toISOString(),
+      },
+      'out-of-range': {
+        temperature: 150,
+        humidity: 140,
+        capturedAt: new Date(now).toISOString(),
+      },
+    };
+
+    if (Object.prototype.hasOwnProperty.call(scenarios, SIMULATED_READING_SCENARIO)) {
+      return scenarios[SIMULATED_READING_SCENARIO];
+    }
+  }
+
   return request(`/api/readings/${deviceId}`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
